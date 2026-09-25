@@ -162,7 +162,7 @@ export async function fetchProfiles(pubkeys: string[]): Promise<Record<string, I
       const value = JSON.parse(event.content);
       out[pubkey] = {
         name: value.display_name || value.name || `${pubkey.slice(0, 8)}…`,
-        headline: value.headline || "Builder on WCJC",
+        headline: value.headline || "Builder on wecanjuschill",
         about: value.about || "",
         website: value.website || "",
         location: value.location || "",
@@ -171,7 +171,7 @@ export async function fetchProfiles(pubkeys: string[]): Promise<Record<string, I
     } catch {
       out[pubkey] = {
         name: `${pubkey.slice(0, 8)}…`,
-        headline: "Builder on WCJC",
+        headline: "Builder on wecanjuschill",
         about: "",
         website: "",
         location: "",

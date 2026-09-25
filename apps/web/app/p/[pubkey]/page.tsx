@@ -24,16 +24,16 @@ export default function ProfilePage({ params }: { params: Promise<{ pubkey: stri
   }, [params]);
 
   return <main className="profile-shell">
-    <Link className="back" href="/">← WCJC network</Link>
+    <Link className="back" href="/">← wecanjuschill network</Link>
     <section className="profile-card">
       <div className="profile-avatar">{(profile?.name || pubkey || "WC").slice(0, 2).toUpperCase()}</div>
       <div className="profile-type">{profile?.type === "company" ? "COMPANY" : "PERSON"}</div>
       <h1>{profile?.name || (pubkey ? shortNpub(pubkey) : "Loading…")}</h1>
-      <h2>{profile?.headline || "Builder on WCJC"}</h2>
+      <h2>{profile?.headline || "Builder on wecanjuschill"}</h2>
       <p>{profile?.about || ""}</p>
       <div className="profile-meta"><span>{profile?.location}</span>{profile?.website && <a href={profile.website.startsWith("http") ? profile.website : `https://${profile.website}`} target="_blank" rel="noreferrer">Website ↗</a>}</div>
       {pubkey && <code>{shortNpub(pubkey)}</code>}
     </section>
-    <section className="profile-posts"><div className="profile-posts-head"><strong>WCJC posts</strong><span>{posts.length}</span></div>{posts.length ? posts.map((post) => <article className="post-card panel" key={post.id}><p className="post-body">{post.content}</p><div className="post-foot"><span>{timeAgo(post.created_at)}</span><span>✓ signed</span></div></article>) : <div className="panel empty">No WCJC posts from this identity yet.</div>}</section>
+    <section className="profile-posts"><div className="profile-posts-head"><strong>Posts</strong><span>{posts.length}</span></div>{posts.length ? posts.map((post) => <article className="post-card panel" key={post.id}><p className="post-body">{post.content}</p><div className="post-foot"><span>{timeAgo(post.created_at)}</span><span>✓ signed</span></div></article>) : <div className="panel empty">No Posts from this identity yet.</div>}</section>
   </main>;
 }
