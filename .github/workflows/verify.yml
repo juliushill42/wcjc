@@ -1,0 +1,31 @@
+name: verify
+on:
+  push:
+  pull_request:
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm --workspace apps/web test
+      - run: npm --workspace apps/web run build
+  indexer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/indexer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go test ./...
+      - run: go build -o /tmp/wcjc-indexer .
