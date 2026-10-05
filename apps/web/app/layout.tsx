@@ -2,26 +2,20 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "wecanjuschill — Build. Connect. Own the relationship.",
-  description: "A free professional network for builders, startups, companies and people who want direct relationships without pay-to-connect walls.",
+  title: "What's Behind That Smile? — WeCanJusChill",
+  description:
+    "A place to remove the mask, tell the truth anonymously, read someone else's story, and show them some love.",
   metadataBase: new URL("https://wecanjuschill.net"),
   openGraph: {
-    title: "wecanjuschill",
-    description: "Build. Connect. Own the relationship.",
+    title: "What's Behind That Smile?",
+    description: "A place to remove the mask.",
     type: "website"
   }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('wecanjuschill.theme.v1');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'}document.documentElement.setAttribute('data-theme',t)}catch(e){}})();`
-          }}
-        />
-      </head>
+    <html lang="en">
       <body>{children}</body>
     </html>
   );
