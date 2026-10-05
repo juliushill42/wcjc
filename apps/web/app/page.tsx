@@ -1,559 +1,453 @@
 "use client";
 
+import Image from "next/image";
 import { AnimatePresence, motion } from "motion/react";
-import Link from "next/link";
+import { finalizeEvent, generateSecretKey, SimplePool, type Event, type Filter } from "nostr-tools";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  createIdentity,
-  fetchFeed,
-  fetchProfiles,
-  loadIdentity,
-  publishConnections,
-  publishPost,
-  shortNpub,
-  type IdentityProfile,
-  type StoredIdentity
-} from "@/lib/nostr";
-import { sanitizeWebsite, timeAgo } from "@/lib/format";
-import type { Event } from "nostr-tools";
 
-type FeedItem = Event & { profile?: IdentityProfile };
-type Theme = "light" | "dark";
+const RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
+const STORY_TAG = "behind-that-smile";
+const LIKED_KEY = "wbts.loved.v1";
 
-const CONNECTIONS_KEY = "wcjc.connections.v1";
-const THEME_KEY = "wecanjuschill.theme.v1";
+type StoryPayload = {
+  title?: string;
+  body: string;
+  feeling?: string;
+};
 
-function loadConnections(): string[] {
+type Story = Event & { payload: StoryPayload };
+
+function parseStory(event: Event): Story {
+  try {
+    const parsed = JSON.parse(event.content) as Partial<StoryPayload>;
+    if (typeof parsed.body === "string" && parsed.body.trim()) {
+      return {
+        ...event,
+        payload: {
+          title: typeof parsed.title === "string" ? parsed.title : "",
+          body: parsed.body,
+          feeling: typeof parsed.feeling === "string" ? parsed.feeling : ""
+        }
+      };
+    }
+  } catch {
+    // Older/plain-text stories remain readable.
+  }
+  return { ...event, payload: { body: event.content } };
+}
+
+function timeAgo(timestamp: number) {
+  const seconds = Math.max(1, Math.floor(Date.now() / 1000) - timestamp);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(timestamp * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+async function publish(event: Event) {
+  const pool = new SimplePool();
+  try {
+    await Promise.any(pool.publish(RELAYS, event));
+  } finally {
+    pool.close(RELAYS);
+  }
+}
+
+async function query(filter: Filter, timeoutMs = 5000): Promise<Event[]> {
+  const pool = new SimplePool();
+  const timeout = new Promise<Event[]>((resolve) => setTimeout(() => resolve([]), timeoutMs));
+  try {
+    return await Promise.race([pool.querySync(RELAYS, filter), timeout]);
+  } finally {
+    pool.close(RELAYS);
+  }
+}
+
+function readLiked(): string[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(CONNECTIONS_KEY) || "[]");
+    return JSON.parse(localStorage.getItem(LIKED_KEY) || "[]");
   } catch {
     return [];
   }
 }
 
-function saveConnections(values: string[]) {
-  localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(values));
-}
-
-function readPreferredTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
-  const saved = localStorage.getItem(THEME_KEY);
-  if (saved === "light" || saved === "dark") return saved;
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-}
-
-function applyTheme(theme: Theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem(THEME_KEY, theme);
-}
-
-function Mark() {
+function LogoMark() {
   return (
-    <div className="mark" aria-label="wecanjuschill">
-      <span>w</span>
-      <i />
-      <span>c</span>
-      <i />
-      <span>j</span>
-      <i />
-      <span>c</span>
+    <div className="logo-mark" aria-hidden="true">
+      <span />
+      <span />
+      <span />
     </div>
   );
 }
 
 export default function HomePage() {
-  const [identity, setIdentity] = useState<StoredIdentity | null>(null);
-  const [showIdentity, setShowIdentity] = useState(false);
-  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [loves, setLoves] = useState<Record<string, number>>({});
+  const [liked, setLiked] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [post, setPost] = useState("");
-  const [postPassword, setPostPassword] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [feeling, setFeeling] = useState("Grief");
+  const [publishing, setPublishing] = useState(false);
   const [status, setStatus] = useState("");
-  const [connections, setConnections] = useState<string[]>([]);
-  const [query, setQuery] = useState("");
-  const [theme, setTheme] = useState<Theme>("dark");
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const events = await fetchFeed();
-      const profiles = await fetchProfiles(events.map((event) => event.pubkey));
-      setFeed(events.map((event) => ({ ...event, profile: profiles[event.pubkey] })));
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not reach relays.");
+      const [storyEvents, reactionEvents] = await Promise.all([
+        query({ kinds: [1], "#t": [STORY_TAG], limit: 80 }),
+        query({ kinds: [7], "#t": [STORY_TAG], limit: 500 })
+      ]);
+
+      const nextStories = storyEvents
+        .map(parseStory)
+        .filter((story) => story.payload.body.trim())
+        .sort((a, b) => b.created_at - a.created_at);
+
+      const nextLoves: Record<string, number> = {};
+      for (const reaction of reactionEvents) {
+        if (reaction.content !== "❤️" && reaction.content !== "+") continue;
+        const eventId = reaction.tags.find((tag) => tag[0] === "e")?.[1];
+        if (eventId) nextLoves[eventId] = (nextLoves[eventId] || 0) + 1;
+      }
+
+      setStories(nextStories);
+      setLoves(nextLoves);
+      setStatus("");
+    } catch {
+      setStatus("The community feed could not refresh. Your page is still here.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const next = readPreferredTheme();
-    setTheme(next);
-    applyTheme(next);
-    setIdentity(loadIdentity());
-    setConnections(loadConnections());
+    setLiked(readLiked());
     void refresh();
   }, [refresh]);
 
-  function toggleTheme() {
-    const next: Theme = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    applyTheme(next);
+  const totalLove = useMemo(
+    () => Object.values(loves).reduce((sum, value) => sum + value, 0),
+    [loves]
+  );
+
+  async function submitStory() {
+    const cleanBody = body.trim();
+    if (!cleanBody || publishing) return;
+
+    setPublishing(true);
+    setStatus("Sharing your story anonymously…");
+
+    try {
+      const secret = generateSecretKey();
+      const event = finalizeEvent(
+        {
+          kind: 1,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ["t", STORY_TAG],
+            ["client", "wecanjuschill-behind-that-smile"],
+            ["feeling", feeling]
+          ],
+          content: JSON.stringify({
+            title: title.trim(),
+            body: cleanBody,
+            feeling
+          })
+        },
+        secret
+      );
+
+      await publish(event);
+      setStories((current) => [parseStory(event), ...current]);
+      setTitle("");
+      setBody("");
+      setFeeling("Grief");
+      setComposerOpen(false);
+      setStatus("Your story is out there. No name attached.");
+    } catch {
+      setStatus("That story did not publish. Tap share and try once more.");
+    } finally {
+      setPublishing(false);
+    }
   }
 
-  const visibleFeed = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return feed;
-    return feed.filter((item) =>
-      [item.content, item.profile?.name, item.profile?.headline, item.profile?.location]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(needle)
-    );
-  }, [feed, query]);
+  async function loveStory(story: Story) {
+    if (liked.includes(story.id)) return;
 
-  async function submitPost() {
-    if (!identity) {
-      setShowIdentity(true);
-      return;
-    }
-    setStatus("Publishing…");
-    try {
-      const event = await publishPost(identity, postPassword, post);
-      setFeed((current) => [{ ...event, profile: identity.profile }, ...current]);
-      setPost("");
-      setPostPassword("");
-      setStatus("Published to the open network.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Publish failed.");
-    }
-  }
+    const nextLiked = [...liked, story.id];
+    setLiked(nextLiked);
+    localStorage.setItem(LIKED_KEY, JSON.stringify(nextLiked));
+    setLoves((current) => ({ ...current, [story.id]: (current[story.id] || 0) + 1 }));
 
-  async function connect(pubkey: string) {
-    if (!identity) {
-      setShowIdentity(true);
-      return;
-    }
-    const password = window.prompt("Unlock your wecanjuschill identity to publish this connection:");
-    if (!password) return;
-    const next = connections.includes(pubkey) ? connections.filter((p) => p !== pubkey) : [...connections, pubkey];
     try {
-      await publishConnections(identity, password, next);
-      saveConnections(next);
-      setConnections(next);
-      setStatus(next.includes(pubkey) ? "Connection published." : "Connection removed.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Connection update failed.");
+      const secret = generateSecretKey();
+      const event = finalizeEvent(
+        {
+          kind: 7,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ["e", story.id],
+            ["p", story.pubkey],
+            ["t", STORY_TAG],
+            ["client", "wecanjuschill-behind-that-smile"]
+          ],
+          content: "❤️"
+        },
+        secret
+      );
+      await publish(event);
+    } catch {
+      setLoves((current) => ({ ...current, [story.id]: Math.max(0, (current[story.id] || 1) - 1) }));
+      const rolledBack = liked;
+      setLiked(rolledBack);
+      localStorage.setItem(LIKED_KEY, JSON.stringify(rolledBack));
+      setStatus("Love did not send. Try again.");
     }
   }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link href="/" className="brand">
-          <Mark />
-          <span>wecanjuschill</span>
-        </Link>
-        <nav>
-          <a href="#network">Network</a>
-          <a href="#principles">How it works</a>
-          <a href="https://github.com/juliushill42/wcjc" target="_blank" rel="noreferrer">
-            Source
-          </a>
-        </nav>
-        <div className="topbar-actions">
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-          >
-            {theme === "dark" ? "Light" : "Dark"}
-          </button>
-          <button className="button secondary" onClick={() => setShowIdentity(true)}>
-            {identity ? identity.profile.name : "Create identity"}
-          </button>
+    <main>
+      <header className="nav">
+        <a href="#top" className="brand" aria-label="What's Behind That Smile home">
+          <LogoMark />
+          <span>WHAT&apos;S BEHIND THAT SMILE?</span>
+        </a>
+        <div className="nav-actions">
+          <a href="#stories">Stories</a>
+          <button className="nav-share" onClick={() => setComposerOpen(true)}>Share yours</button>
         </div>
       </header>
 
-      <section className="hero">
+      <section className="hero" id="top">
+        <div className="hero-image">
+          <Image
+            src="https://images.unsplash.com/photo-1758600435230-a4894ad86897?auto=format&fit=crop&fm=jpg&q=88&w=1800"
+            alt="A Black woman smiling softly"
+            fill
+            priority
+            sizes="(max-width: 900px) 100vw, 48vw"
+          />
+          <div className="hero-image-shade" />
+          <div className="hero-image-caption">
+            <span>THE SMILE</span>
+            <strong>is only part of the story.</strong>
+          </div>
+        </div>
+
         <div className="hero-copy">
-          <div className="eyebrow">Free professional network</div>
+          <div className="kicker">WECANJUSCHILL PRESENTS</div>
           <h1>
-            Build. Connect.
+            What&apos;s behind
             <br />
-            <em>Own the relationship.</em>
+            <em>that smile?</em>
           </h1>
-          <p>
-            wecanjuschill is a free professional network for builders, startups, companies and people who want direct
-            relationships without pay-to-connect walls.
+          <p className="hero-lead">
+            A place to remove the mask. Tell the part people cannot see.
+            Read somebody else&apos;s truth. Leave them a little love.
           </p>
-          <div className="hero-actions">
-            <button className="button primary" onClick={() => setShowIdentity(true)}>
-              {identity ? "Manage identity" : "Join free"}
-            </button>
-            <a className="button ghost" href="#network">
-              Open the network ↓
-            </a>
+          <div className="hero-buttons">
+            <button className="primary" onClick={() => setComposerOpen(true)}>Tell your story</button>
+            <a className="secondary" href="#stories">Read the room ↓</a>
           </div>
-          <div className="proof-row">
+          <div className="hero-proof">
             <div>
-              <strong>$0</strong>
-              <span>to create an identity</span>
+              <strong>Anonymous</strong>
+              <span>No name required.</span>
             </div>
             <div>
-              <strong>3</strong>
-              <span>public relays by default</span>
+              <strong>Human</strong>
+              <span>No likes. Just love.</span>
             </div>
             <div>
-              <strong>Yours</strong>
-              <span>signed identity you control</span>
+              <strong>Open</strong>
+              <span>Your truth can help somebody.</span>
             </div>
           </div>
         </div>
-        <motion.div
-          className="hero-card"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="hero-card-top">
-            <span>YOUR PROFESSIONAL GRAPH</span>
-            <span className="live-dot">LIVE</span>
-          </div>
-          <div className="graph-orbit orbit-a" />
-          <div className="graph-orbit orbit-b" />
-          <div className="graph-core">WJC</div>
-          <div className="node n1">BUILDERS</div>
-          <div className="node n2">STARTUPS</div>
-          <div className="node n3">COMPANIES</div>
-          <div className="node n4">OPPORTUNITY</div>
-          <div className="hero-card-bottom">Signed locally. Published openly. Portable by design.</div>
-        </motion.div>
       </section>
 
-      <section className="principles" id="principles">
-        <article>
-          <span>01</span>
-          <h3>No paywall on people.</h3>
-          <p>Creating a profile, posting and making a connection are core network actions. They are not premium features.</p>
-        </article>
-        <article>
-          <span>02</span>
-          <h3>Your identity is portable.</h3>
-          <p>
-            Your posts and profile are cryptographically signed by an identity created in your browser—not trapped inside
-            one company database.
-          </p>
-        </article>
-        <article>
-          <span>03</span>
-          <h3>The recipe stays open.</h3>
-          <p>
-            wecanjuschill can be rebuilt. The network is more resilient when no single gatekeeper owns how it works.
-          </p>
-        </article>
+      <section className="statement">
+        <p className="statement-small">SOMETIMES THE PERSON SMILING THE HARDEST</p>
+        <blockquote>
+          is carrying something they never learned
+          <span> how to say out loud.</span>
+        </blockquote>
+        <p>
+          This is not a highlight reel. It is a place for grief, depression, heartbreak,
+          starting over, missing somebody, surviving something, and admitting: “I&apos;m not okay today.”
+        </p>
       </section>
 
-      <section className="network" id="network">
-        <aside className="rail">
-          <div className="panel identity-panel">
-            <div className="panel-label">IDENTITY</div>
-            {identity ? (
-              <>
-                <div className="avatar">{identity.profile.name.slice(0, 2).toUpperCase()}</div>
-                <h3>{identity.profile.name}</h3>
-                <p>{identity.profile.headline}</p>
-                <code>{shortNpub(identity.pubkey)}</code>
-                <Link className="text-link" href={`/p/${identity.pubkey}`}>
-                  View public profile →
-                </Link>
-              </>
-            ) : (
-              <>
-                <h3>You don’t need permission.</h3>
-                <p>Create a local cryptographic identity and publish your professional profile to the open network.</p>
-                <button className="button primary full" onClick={() => setShowIdentity(true)}>
-                  Create identity
-                </button>
-              </>
-            )}
-          </div>
-          <div className="panel compact">
-            <div className="panel-label">NETWORK STATUS</div>
-            <div className="status-row">
-              <span className="dot green" />
-              Open relay mesh
-            </div>
-            <div className="status-row">
-              <span className="dot" />
-              No central login required
-            </div>
-            <div className="status-row">
-              <span className="dot" />
-              Portable signed identity
-            </div>
-          </div>
-        </aside>
+      <section className="split-story">
+        <div className="split-copy">
+          <span className="section-number">01 — REMOVE THE MASK</span>
+          <h2>You do not have to perform here.</h2>
+          <p>
+            No perfect caption. No polished ending. No requirement to turn pain into inspiration.
+            Say what happened. Say what hurts. Say what you wish somebody understood.
+          </p>
+          <button className="text-button" onClick={() => setComposerOpen(true)}>Write anonymously →</button>
+        </div>
+        <div className="split-image">
+          <Image
+            src="https://images.unsplash.com/photo-1664629152253-4cd71d256d8c?auto=format&fit=crop&fm=jpg&q=88&w=1600"
+            alt="A Black woman smiling and looking down"
+            fill
+            sizes="(max-width: 900px) 100vw, 45vw"
+          />
+        </div>
+      </section>
 
-        <div className="feed-column">
-          <div className="composer panel">
-            <div className="composer-row">
-              <div className="avatar small">{identity ? identity.profile.name.slice(0, 2).toUpperCase() : "U"}</div>
-              <textarea
-                value={post}
-                onChange={(e) => setPost(e.target.value)}
-                placeholder={
-                  identity
-                    ? "Share what you’re building, hiring for, or looking for…"
-                    : "Create an identity to publish on wecanjuschill…"
-                }
-              />
-            </div>
-            <div className="composer-actions">
-              {identity && (
-                <input
-                  type="password"
-                  value={postPassword}
-                  onChange={(e) => setPostPassword(e.target.value)}
-                  placeholder="Local identity password"
-                />
-              )}
-              <span>{post.length}/4000</span>
-              <button className="button primary" disabled={!post.trim()} onClick={() => void submitPost()}>
-                Publish
-              </button>
-            </div>
-            {status && <div className="inline-status">{status}</div>}
+      <section className="stories-section" id="stories">
+        <div className="stories-head">
+          <div>
+            <span className="section-number">02 — THE ROOM</span>
+            <h2>Real stories. No masks.</h2>
           </div>
-
-          <div className="feed-tools">
-            <div>
-              <strong>Open network</strong>
-              <span>{loading ? "Syncing relays…" : `${visibleFeed.length} recent posts`}</span>
-            </div>
-            <div className="search-wrap">
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search this live view" />
-              <button onClick={() => void refresh()}>Refresh</button>
-            </div>
+          <div className="room-stats">
+            <span>{loading ? "…" : stories.length}<small>stories here</small></span>
+            <span>{totalLove}<small>pieces of love</small></span>
           </div>
+        </div>
 
-          {loading && feed.length === 0 ? (
-            <div className="panel empty">Connecting to the open relay mesh…</div>
-          ) : visibleFeed.length === 0 ? (
-            <div className="panel empty">No posts found yet. Be the first one in this relay view.</div>
-          ) : (
-            visibleFeed.map((item) => {
-              const profile = item.profile;
-              const website = sanitizeWebsite(profile?.website || "");
-              const isConnected = connections.includes(item.pubkey);
+        {status && <div className="status">{status}</div>}
+
+        {loading && stories.length === 0 ? (
+          <div className="empty-state">Opening the room…</div>
+        ) : stories.length === 0 ? (
+          <div className="empty-state">
+            <strong>The room is quiet right now.</strong>
+            <span>Your story can be the first one somebody needed to read.</span>
+            <button className="primary" onClick={() => setComposerOpen(true)}>Open up</button>
+          </div>
+        ) : (
+          <div className="story-grid">
+            {stories.map((story, index) => {
+              const isLoved = liked.includes(story.id);
               return (
-                <article className="post-card panel" key={item.id}>
-                  <div className="post-head">
-                    <Link href={`/p/${item.pubkey}`} className="avatar">
-                      {(profile?.name || item.pubkey).slice(0, 2).toUpperCase()}
-                    </Link>
-                    <div className="post-author">
-                      <Link href={`/p/${item.pubkey}`}>
-                        <strong>{profile?.name || shortNpub(item.pubkey)}</strong>
-                      </Link>
-                      <span>{profile?.headline || "Builder on wecanjuschill"}</span>
-                      <small>
-                        {profile?.location ? `${profile.location} · ` : ""}
-                        {timeAgo(item.created_at)}
-                      </small>
-                    </div>
-                    {identity?.pubkey !== item.pubkey && (
-                      <button className={`connect ${isConnected ? "connected" : ""}`} onClick={() => void connect(item.pubkey)}>
-                        {isConnected ? "Connected" : "Connect"}
-                      </button>
-                    )}
+                <motion.article
+                  className={`story-card ${index === 0 ? "featured" : ""}`}
+                  key={story.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-40px" }}
+                  transition={{ duration: 0.35 }}
+                >
+                  <div className="story-meta">
+                    <span>{story.payload.feeling || "Anonymous truth"}</span>
+                    <time>{timeAgo(story.created_at)}</time>
                   </div>
-                  <p className="post-body">{item.content}</p>
-                  <div className="post-foot">
-                    <span>✓ signed post</span>
-                    {website && (
-                      <a href={website} target="_blank" rel="noreferrer">
-                        Website ↗
-                      </a>
-                    )}
-                    <code>{shortNpub(item.pubkey)}</code>
+                  {story.payload.title && <h3>{story.payload.title}</h3>}
+                  <p>{story.payload.body}</p>
+                  <div className="story-foot">
+                    <span>Anonymous</span>
+                    <button
+                      className={isLoved ? "love loved" : "love"}
+                      onClick={() => void loveStory(story)}
+                      disabled={isLoved}
+                      aria-label={isLoved ? "You sent love" : "Send love"}
+                    >
+                      <span aria-hidden="true">♥</span>
+                      {isLoved ? "Loved" : "Show some love"}
+                      <b>{loves[story.id] || 0}</b>
+                    </button>
                   </div>
-                </article>
+                </motion.article>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
+      </section>
 
-        <aside className="rail right-rail">
-          <div className="panel">
-            <div className="panel-label">WHY WECANJUSCHILL</div>
-            <h3>Professional connection without artificial scarcity.</h3>
-            <p>People should not need a paid tier just to reach another person who wants to hear from them.</p>
-          </div>
-          <div className="panel manifesto">
-            <div className="panel-label">THE RULE</div>
-            <blockquote>“The relationship belongs to the people in it.”</blockquote>
-            <p>Not the feed. Not the subscription tier. Not the platform.</p>
-          </div>
-        </aside>
+      <section className="closing">
+        <LogoMark />
+        <h2>You never know what&apos;s behind a smile.</h2>
+        <p>But sometimes knowing you are not carrying it alone changes everything.</p>
+        <button className="primary light" onClick={() => setComposerOpen(true)}>Say what&apos;s behind yours</button>
       </section>
 
       <footer>
-        <Mark />
-        <div>
-          <strong>wecanjuschill</strong>
-          <span>wecanjuschill.net</span>
-        </div>
-        <p>Free to use. Open source. Built by Titan Universal Advanced Intelligence.</p>
+        <span>WHAT&apos;S BEHIND THAT SMILE?</span>
+        <p>A WeCanJusChill space for the things people usually carry alone.</p>
+        <span>Built with love.</span>
       </footer>
 
       <AnimatePresence>
-        {showIdentity && (
-          <IdentityModal
-            existing={identity}
-            onClose={() => setShowIdentity(false)}
-            onCreated={(value) => {
-              setIdentity(value);
-              setShowIdentity(false);
-              setStatus("Identity created and profile published.");
-            }}
-          />
+        {composerOpen && (
+          <motion.div
+            className="composer-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onMouseDown={() => setComposerOpen(false)}
+          >
+            <motion.section
+              className="composer"
+              initial={{ opacity: 0, y: 30, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 15 }}
+              onMouseDown={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="composer-title"
+            >
+              <button className="composer-close" onClick={() => setComposerOpen(false)} aria-label="Close">×</button>
+              <span className="section-number">YOUR TURN</span>
+              <h2 id="composer-title">What&apos;s behind your smile?</h2>
+              <p className="composer-note">
+                No account. No name. A new anonymous identity signs this story and is discarded after publishing.
+              </p>
+
+              <div className="feeling-row" aria-label="Choose a theme">
+                {["Grief", "Depression", "Heartbreak", "Starting over", "Missing someone", "Hope"].map((item) => (
+                  <button
+                    key={item}
+                    className={feeling === item ? "feeling active" : "feeling"}
+                    onClick={() => setFeeling(item)}
+                    type="button"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+
+              <label>
+                A few words at the top <small>optional</small>
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value.slice(0, 120))}
+                  placeholder="The thing nobody sees…"
+                />
+              </label>
+
+              <label>
+                Your story
+                <textarea
+                  value={body}
+                  onChange={(event) => setBody(event.target.value.slice(0, 5000))}
+                  placeholder="You can tell the truth here."
+                  autoFocus
+                />
+              </label>
+
+              <div className="composer-bottom">
+                <span>{body.length}/5000</span>
+                <button className="primary" disabled={!body.trim() || publishing} onClick={() => void submitStory()}>
+                  {publishing ? "Sharing…" : "Share anonymously"}
+                </button>
+              </div>
+            </motion.section>
+          </motion.div>
         )}
       </AnimatePresence>
     </main>
-  );
-}
-
-function IdentityModal({
-  existing,
-  onClose,
-  onCreated
-}: {
-  existing: StoredIdentity | null;
-  onClose: () => void;
-  onCreated: (value: StoredIdentity) => void;
-}) {
-  const [profile, setProfile] = useState<IdentityProfile>(
-    existing?.profile || { name: "", headline: "", about: "", website: "", location: "", type: "person" }
-  );
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [working, setWorking] = useState(false);
-
-  async function create() {
-    if (existing) {
-      onClose();
-      return;
-    }
-    if (!profile.name.trim() || !profile.headline.trim()) {
-      setError("Name and headline are required.");
-      return;
-    }
-    setWorking(true);
-    setError("");
-    try {
-      onCreated(await createIdentity(profile, password));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create identity.");
-      setWorking(false);
-    }
-  }
-
-  return (
-    <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={onClose}>
-      <motion.div
-        className="modal"
-        initial={{ opacity: 0, scale: 0.96, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.98 }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <button className="modal-x" onClick={onClose}>
-          ×
-        </button>
-        <div className="eyebrow">{existing ? "YOUR IDENTITY" : "CREATE YOUR IDENTITY"}</div>
-        <h2>{existing ? existing.profile.name : "No subscription. No approval queue."}</h2>
-        {existing ? (
-          <>
-            <p className="modal-copy">
-              Your identity key is encrypted in this browser. Your public profile is portable across compatible relays and
-              clients.
-            </p>
-            <code className="key-block">{existing.npub}</code>
-          </>
-        ) : (
-          <>
-            <div className="type-switch">
-              <button className={profile.type === "person" ? "active" : ""} onClick={() => setProfile({ ...profile, type: "person" })}>
-                Person
-              </button>
-              <button
-                className={profile.type === "company" ? "active" : ""}
-                onClick={() => setProfile({ ...profile, type: "company" })}
-              >
-                Company
-              </button>
-            </div>
-            <label>
-              Name
-              <input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} placeholder="Julius Hill" />
-            </label>
-            <label>
-              Headline
-              <input
-                value={profile.headline}
-                onChange={(e) => setProfile({ ...profile, headline: e.target.value })}
-                placeholder="Founder · Systems Engineer"
-              />
-            </label>
-            <label>
-              Location
-              <input
-                value={profile.location}
-                onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                placeholder="Chicago, IL"
-              />
-            </label>
-            <label>
-              Website
-              <input
-                value={profile.website}
-                onChange={(e) => setProfile({ ...profile, website: e.target.value })}
-                placeholder="https://example.com"
-              />
-            </label>
-            <label>
-              About
-              <textarea
-                value={profile.about}
-                onChange={(e) => setProfile({ ...profile, about: e.target.value })}
-                placeholder="What are you building?"
-              />
-            </label>
-            <label>
-              Local identity password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="10+ characters"
-              />
-            </label>
-            <p className="security-note">
-              Your private signing key is encrypted locally with this password. wecanjuschill does not receive the password or
-              raw private key.
-            </p>
-          </>
-        )}
-        {error && <div className="error">{error}</div>}
-        <button className="button primary full" disabled={working} onClick={() => void create()}>
-          {existing ? "Close" : working ? "Publishing identity…" : "Create + publish identity"}
-        </button>
-      </motion.div>
-    </motion.div>
   );
 }
