@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Messenger from "./Messenger";
 import { finalizeEvent, generateSecretKey, SimplePool, type Event, type Filter } from "nostr-tools";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -221,6 +222,7 @@ export default function HomePage() {
         </a>
         <nav>
           <a href="#stories">Stories</a>
+          <Messenger />
           <button onClick={() => setComposerOpen(true)}>Tell yours</button>
         </nav>
       </header>
