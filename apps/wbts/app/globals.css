@@ -235,3 +235,51 @@ footer p{margin:18px 0 0;color:#796f67;font-size:11px;line-height:1.6}
   .story-card.feature{grid-column:span 2}
   .stories-section{padding-left:max(7vw,calc((100vw - 1450px)/2));padding-right:max(7vw,calc((100vw - 1450px)/2))}
 }
+
+
+/* WBTS Messenger */
+.messenger-launch{border:1px solid rgba(255,212,116,.55);border-radius:999px;background:rgba(8,8,8,.8);color:#ffe0a0;padding:9px 13px;font-size:11px;font-weight:900;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.messenger-launch span{font-size:15px}
+.messenger-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.78);backdrop-filter:blur(8px);display:grid;place-items:center;padding:16px}
+.messenger-window{width:min(100%,1050px);height:min(760px,92dvh);background:#11100f;border:1px solid rgba(255,212,116,.3);border-radius:20px;box-shadow:0 28px 100px #000;display:flex;flex-direction:column;overflow:hidden;color:#f8f0e7}
+.messenger-head{display:flex;align-items:center;justify-content:space-between;padding:19px 22px;border-bottom:1px solid var(--line)}
+.messenger-head h2{font-family:"Playfair Display",Georgia,serif;font-size:28px;margin:3px 0 0}
+.messenger-kicker{font-size:9px;letter-spacing:.2em;color:var(--gold);font-weight:900}
+.messenger-close{background:transparent;color:white;border:0;font-size:30px;line-height:1}
+.messenger-identity{padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#171513;border-bottom:1px solid var(--line);font-size:11px;color:#c9beb1}
+.messenger-identity code{color:#ffdb8c;font-size:11px}
+.messenger-identity button,.messenger-add button,.messenger-compose button{border:0;border-radius:999px;background:var(--gold2);color:#17110a;padding:9px 13px;font-size:11px;font-weight:900}
+.messenger-body{display:grid;grid-template-columns:290px minmax(0,1fr);min-height:0;flex:1}
+.messenger-contacts{border-right:1px solid var(--line);padding:16px;overflow:auto}
+.messenger-contacts>strong{font-size:12px;display:block;margin-bottom:12px}
+.messenger-contact{display:flex;width:100%;gap:10px;align-items:center;text-align:left;padding:10px;border:1px solid transparent;background:transparent;color:white;border-radius:12px;margin-bottom:4px}
+.messenger-contact.active{background:rgba(244,189,74,.1);border-color:rgba(244,189,74,.3)}
+.messenger-avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;flex:none;background:linear-gradient(135deg,#ef2d74,#864ee8);font-weight:900}
+.messenger-contact b,.messenger-contact small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}
+.messenger-contact b{font-size:12px}.messenger-contact small{font-size:10px;color:#a89c8f;margin-top:4px}
+.messenger-add{border-top:1px solid var(--line);padding-top:14px;margin-top:12px;display:grid;gap:7px}
+.messenger-add label{font-size:10px;color:#cbbfb0;margin-top:4px}
+.messenger-add input,.messenger-compose textarea{width:100%;border:1px solid #494139;border-radius:10px;background:#090909;color:white;padding:10px;outline:none}
+.messenger-add input:focus,.messenger-compose textarea:focus{border-color:var(--gold)}
+.messenger-add input{font-size:11px}
+.messenger-add button{margin-top:5px}
+.messenger-chat{display:flex;flex-direction:column;min-width:0;min-height:0}
+.messenger-chat-title{padding:15px 18px;border-bottom:1px solid var(--line)}
+.messenger-chat-title strong,.messenger-chat-title small{display:block}
+.messenger-chat-title strong{font-size:13px}.messenger-chat-title small{font-size:10px;color:#b8aea1;margin-top:5px;overflow-wrap:anywhere}
+.messenger-messages{padding:18px;display:flex;flex:1;min-height:100px;flex-direction:column;gap:10px;overflow:auto}
+.messenger-bubble{align-self:flex-start;max-width:82%;background:#25221e;border:1px solid #39342e;border-radius:15px 15px 15px 4px;padding:10px 12px;overflow-wrap:anywhere}
+.messenger-bubble.mine{align-self:flex-end;background:#3b2b12;border-color:#77531e;border-radius:15px 15px 4px 15px}
+.messenger-bubble p{font-size:13px;line-height:1.5;margin:0;white-space:pre-wrap}
+.messenger-bubble time{display:block;color:#b8aea1;font-size:9px;margin-top:7px}
+.messenger-compose{display:flex;align-items:flex-end;gap:10px;padding:12px 16px;border-top:1px solid var(--line)}
+.messenger-compose textarea{resize:vertical;min-height:44px;max-height:130px;font-size:13px}
+.messenger-compose button{min-height:40px}
+.messenger-refresh{align-self:flex-start;margin:0 16px 10px;border:0;background:transparent;color:#f6cb75;font-size:10px;text-decoration:underline}
+.messenger-empty{margin:auto;text-align:center;color:#b8aea1;font-size:12px;line-height:1.6;max-width:300px}
+.messenger-welcome{padding:24px}
+.messenger-welcome>span{font-size:36px;color:var(--gold)}
+.messenger-welcome h3{font-family:"Playfair Display",Georgia,serif;color:white;font-size:25px;margin:12px 0}
+.messenger-notice{margin:0;padding:9px 18px;background:#1b1914;color:#f9d88d;font-size:11px;overflow-wrap:anywhere}
+.messenger-disclaimer{margin:0;padding:9px 18px;border-top:1px solid var(--line);font-size:9px;line-height:1.5;color:#968b7f}
+@media(max-width:640px){.messenger-overlay{padding:0;place-items:stretch}.messenger-window{height:100dvh;width:100%;border-radius:0}.messenger-head{padding:15px}.messenger-identity{gap:8px;padding:9px 13px}.messenger-body{grid-template-columns:118px minmax(0,1fr)}.messenger-contacts{padding:8px}.messenger-contact{padding:7px;gap:6px}.messenger-avatar{width:28px;height:28px}.messenger-contact b,.messenger-contact small{max-width:72px;font-size:9px}.messenger-add input{padding:8px;font-size:10px}.messenger-add label{font-size:9px}.messenger-add button{font-size:9px;padding:8px 5px}.messenger-messages{padding:10px}.messenger-compose{padding:9px;gap:6px}.messenger-compose button{padding:8px}.messenger-disclaimer{font-size:8px}}
