@@ -230,8 +230,8 @@ export default function HomePage() {
       <section className="hero" id="top">
         <Image
           className="hero-photo"
-          src="https://images.unsplash.com/photo-1758600435230-a4894ad86897?auto=format&fit=crop&fm=jpg&q=90&w=2000"
-          alt="A Black woman smiling"
+          src="/images/wbts-smile-hero.jpg"
+          alt="A warm, welcoming portrait with a bright smile"
           fill
           priority
           sizes="100vw"

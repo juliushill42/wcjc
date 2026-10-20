@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { finalizeEvent, generateSecretKey, getPublicKey, hexToBytes, bytesToHex, nip04, SimplePool, type Event } from "nostr-tools";
+import { finalizeEvent, generateSecretKey, getPublicKey, nip04, SimplePool, type Event } from "nostr-tools";
+
+function hexToBytes(hex: string): Uint8Array {
+  if (!/^[0-9a-f]{64}$/i.test(hex)) throw new Error("Invalid stored key");
+  return Uint8Array.from(hex.match(/../g)!, pair => parseInt(pair, 16));
+}
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+}
 
 const RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
 const SECRET_KEY = "wbts.messenger.secret.v1";

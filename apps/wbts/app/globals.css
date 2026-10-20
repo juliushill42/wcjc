@@ -283,3 +283,37 @@ footer p{margin:18px 0 0;color:#796f67;font-size:11px;line-height:1.6}
 .messenger-notice{margin:0;padding:9px 18px;background:#1b1914;color:#f9d88d;font-size:11px;overflow-wrap:anywhere}
 .messenger-disclaimer{margin:0;padding:9px 18px;border-top:1px solid var(--line);font-size:9px;line-height:1.5;color:#968b7f}
 @media(max-width:640px){.messenger-overlay{padding:0;place-items:stretch}.messenger-window{height:100dvh;width:100%;border-radius:0}.messenger-head{padding:15px}.messenger-identity{gap:8px;padding:9px 13px}.messenger-body{grid-template-columns:118px minmax(0,1fr)}.messenger-contacts{padding:8px}.messenger-contact{padding:7px;gap:6px}.messenger-avatar{width:28px;height:28px}.messenger-contact b,.messenger-contact small{max-width:72px;font-size:9px}.messenger-add input{padding:8px;font-size:10px}.messenger-add label{font-size:9px}.messenger-add button{font-size:9px;padding:8px 5px}.messenger-messages{padding:10px}.messenger-compose{padding:9px;gap:6px}.messenger-compose button{padding:8px}.messenger-disclaimer{font-size:8px}}
+
+
+/* What's Behind That Smile: portrait-led homepage for WeCanJusChill.net */
+.hero {
+  isolation: isolate;
+  background: radial-gradient(ellipse at 82% 36%, rgba(131,67,81,.25), transparent 49%), #070707;
+}
+.hero-photo {
+  object-position: 50% 25%;
+  filter: saturate(1.07) contrast(1.02);
+}
+.hero-wash {pointer-events:none}
+@media (min-width:700px) {
+  .hero-photo {
+    inset: 0 0 0 auto !important;
+    width: min(67%, 1040px) !important;
+    object-position: center 24%;
+    -webkit-mask-image: linear-gradient(90deg,transparent 0%,#000 27%);
+    mask-image: linear-gradient(90deg,transparent 0%,#000 27%);
+  }
+  .hero-wash {
+    background:
+      linear-gradient(90deg,#070707 0%,rgba(7,7,7,.97) 25%,rgba(7,7,7,.72) 48%,rgba(7,7,7,.05) 82%),
+      linear-gradient(0deg,#070707 0%,transparent 24%);
+  }
+}
+@media (max-width:699px) {
+  .hero-photo {object-position: center 18%}
+  .hero-wash {
+    background:
+      linear-gradient(180deg,rgba(0,0,0,.05) 0%,rgba(0,0,0,.12) 36%,rgba(0,0,0,.75) 64%,#070707 100%),
+      linear-gradient(90deg,rgba(0,0,0,.52),transparent 77%);
+  }
+}
